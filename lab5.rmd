@@ -1,0 +1,143 @@
+---
+title: "Lab5"
+author: "Stephanie Gluck"
+date: "February 13, 2020"
+output: 
+  html_document: 
+    theme: cerulean
+---
+
+```{r setup}
+library(rio)
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(scales)
+library(janitor)
+library(ggrepel)
+library(gghighlight)
+
+```
+
+
+https://www.kaggle.com/noriuk/us-education-datasets-unification-project
+```{r load_data}
+
+pth <- here("states_all.csv")
+d <- import(pth) %>% clean_names() %>% 
+  mutate(state = str_to_title(state))
+
+```
+
+## Part 1 
+
+### 1. Reproduce Plot 
+
+```{r reproduce_plot, fig.width = 14, fig.height = 5}
+
+p1_d <- d %>% select(state, year, ends_with("revenue"), -total_revenue) %>% 
+  pivot_longer(ends_with("revenue"), names_to = "revenue_type", values_to = "revenue")
+
+head(p1_d)
+
+ggplot(p1_d, aes(year, revenue)) +
+  geom_line(aes(color = state)) + 
+  facet_wrap(~revenue_type)
+
+```
+
+
+I noticed when I first plot the data, an error was generated that told me it removed 534 rows that had missing values. I thought it would be good to remove those rows for subsequent visualization. 
+
+### 2. Plot Improvement  
+
+The legend with all the states in different colors makes the plot extremely diffuclt to understand and the colors that correspond to each state is difficult to distinguish. Instead of having all the states by different colors, a stronger visualization could have all the sates in one color and selectively highlight particular states of interest as it comes to revenue (e.g., states with highest and lowest federal, local and state revenue, or highlist the state that one resides in) or the addition of a trend line to show the average change in revenue over time. 
+
+Overall, the data appears to skew to the right with most states reporting at the lower end of the revenue. Log transformation applied to the Y axis (revenue) may help better visualize the revenue across each state over time. 
+
+The current Y axis values are denoted in scientic notation which makes it difficult to understand. Converting the Y-axis to to dollars would be the more appropriate and fitting to the revenue data. The X axis title could be removed as year is intuitive and could be gleaned if a figure title was included. 
+
+### 3. Revised Plot 
+
+1. Log transformed Y axis and changed Y axis values to dollars, removed X axis title  
+2. Added trend line to show overall revenue trend 
+3. Colored all sate by one single color (gray)
+
+```{r revised_plot}
+
+p1_d_revised <- p1_d %>% drop_na() %>% 
+  mutate(revenue_type = as.factor(revenue_type)) %>%
+  mutate(revenue_type = recode(revenue_type, 
+                               "federal_revenue" = "Federal",
+                               "local_revenue" = "Local", 
+                               "state_revenue" = "State"))
+
+ggplot(p1_d_revised, aes(year, revenue)) +
+  geom_line(aes(group = state), 
+            color = "#9ebcda") +
+  scale_y_log10(labels = scales::dollar) +
+  geom_smooth(group = "state", color = "#810f7c") + 
+  facet_wrap(~revenue_type) + 
+  theme_minimal() + 
+  labs(x = "", 
+       y = "Revenue", 
+       title = "Revenue Over Time by State") + 
+  theme(plot.title.position = "plot")
+
+```
+
+### Revised plot ideal version 
+
+I wanted to use gghighlight to highlight the state with the highest and lowest revenue for each facet (state, local, federal) but was having diffulty getting the result I wanted in ggplot. I included 2 attempts that produced varying result and highlights. 
+
+Also, I would have liked to still include the trend line even after using gghighlight. However simply adding geom_smooth() within my codes produced an error. 
+
+```{r revised_plot_ideal}
+
+p1_d_revised %>% group_by(revenue_type) %>% summarize(max = max(revenue), 
+                                              min = min(revenue))
+
+ggplot(p1_d_revised) +
+  geom_line(aes(x = year, y = revenue, group = state)) +
+  scale_y_log10(labels = scales::dollar) + 
+  facet_wrap(~revenue_type) + 
+  gghighlight(revenue == min(revenue) | revenue == max(revenue), 
+              calculate_per_facet = T, max_highlight = 1) + 
+  theme_minimal()
+
+ggplot(p1_d_revised) +
+  geom_line(aes(x = year, y = revenue, color = state)) +
+  scale_y_log10(labels = scales::dollar) + 
+  facet_wrap(~revenue_type) + 
+  gghighlight(max_highlight = 1, min(revenue) < 32000 | max(revenue) > 9990100, 
+              calculate_per_facet = T) +
+  theme_minimal()
+
+```
+
+## Part 2 - avg_score data not matching up to class data
+
+Stephanie comment: I wanted to extract only the subject (math or reading) after pivot_longer so I googled up a regular expression to extract values in between underscores, but I have no idea what the expression is actually doing, it was more of a plug and play and see what works. 
+
+My avg_revenue values are the same as the table from class but my avg_score values are not. Also I'm not quite sure why the decimals are not showing up when calling head() on my dataset for avg_score 
+
+```{r, p2_data_manip}
+
+p2_d <- d %>% select(state, year, total_revenue, enroll, ends_with("score")) %>% 
+  drop_na(-state, -year) %>%  
+  pivot_longer(ends_with("score"), names_to = "content", values_to = "score") %>% 
+  mutate(content = sub("(.*?_){1}(.*?)($|_.*)", "\\2", content)) %>% 
+  mutate(content = as.factor(content)) %>%
+  mutate(content = recode(content, 
+                               "math" = "Math",
+                               "reading" = "Reading"))
+
+p2_d_summary <- p2_d %>% group_by(state, content) %>% 
+  summarise(avg_revenue = mean(total_revenue/enroll),
+            avg_score = mean(score))
+
+head(p2_d_summary)
+tail(p2_d_summary)
+
+```
+
