@@ -16,6 +16,7 @@ library(scales)
 library(janitor)
 library(ggrepel)
 library(gghighlight)
+library(ggtext)
 
 ```
 
@@ -33,7 +34,7 @@ d <- import(pth) %>% clean_names() %>%
 
 ### 1. Reproduce Plot 
 
-```{r reproduce_plot, fig.width = 14, fig.height = 5}
+```{r p1_reproduce_plot, fig.width = 14, fig.height = 5}
 
 p1_d <- d %>% select(state, year, ends_with("revenue"), -total_revenue) %>% 
   pivot_longer(ends_with("revenue"), names_to = "revenue_type", values_to = "revenue")
@@ -63,7 +64,7 @@ The current Y axis values are denoted in scientic notation which makes it diffic
 2. Added trend line to show overall revenue trend 
 3. Colored all sate by one single color (gray)
 
-```{r revised_plot}
+```{r p1_revised_plot}
 
 p1_d_revised <- p1_d %>% drop_na() %>% 
   mutate(revenue_type = as.factor(revenue_type)) %>%
@@ -92,7 +93,7 @@ I wanted to use gghighlight to highlight the state with the highest and lowest r
 
 Also, I would have liked to still include the trend line even after using gghighlight. However simply adding geom_smooth() within my codes produced an error. 
 
-```{r revised_plot_ideal}
+```{r p1_revised_plot_ideal}
 
 p1_d_revised %>% group_by(revenue_type) %>% summarize(max = max(revenue), 
                                               min = min(revenue))
@@ -115,13 +116,11 @@ ggplot(p1_d_revised) +
 
 ```
 
-## Part 2 - avg_score data not matching up to class data
+## Part 2 
 
-Stephanie comment: I wanted to extract only the subject (math or reading) after pivot_longer so I googled up a regular expression to extract values in between underscores, but I have no idea what the expression is actually doing, it was more of a plug and play and see what works. 
+Stephanie comment: I wanted to extract only the subject (math or reading) after pivot_longer so I googled up a regular expression to extract values in between underscores, but I have no idea what the expression is actually doing, it was more of a plug and play and see what works.
 
-My avg_revenue values are the same as the table from class but my avg_score values are not. Also I'm not quite sure why the decimals are not showing up when calling head() on my dataset for avg_score 
-
-```{r, p2_data_manip}
+```{r p2_data_manip}
 
 p2_d <- d %>% select(state, year, total_revenue, enroll, ends_with("score")) %>% 
   drop_na(-state, -year) %>%  
@@ -134,10 +133,67 @@ p2_d <- d %>% select(state, year, total_revenue, enroll, ends_with("score")) %>%
 
 p2_d_summary <- p2_d %>% group_by(state, content) %>% 
   summarise(avg_revenue = mean(total_revenue/enroll),
-            avg_score = mean(score))
+            avg_score = mean(score)) %>% 
+  ungroup() %>% 
+  mutate(state = gsub("_", " ", state), 
+         state = str_to_title(state)) 
 
 head(p2_d_summary)
 tail(p2_d_summary)
 
+```
+
+### Reproduce Plot
+
+```{r p2_reproduce_plot}
+
+ggplot(p2_d_summary, aes(avg_revenue, avg_score)) + 
+  geom_point() + 
+  facet_wrap(~ content)
+
+```
+
+### Improve Plot 
+
+
+```{r p2_revised_plot, fig.width = 9, fig.height = 7}
+
+top_revenue <- p2_d_summary %>%
+  top_n(10, wt = avg_revenue)
+top_revenue
+
+low_revenue <- p2_d_summary %>%
+  top_n(-10, wt = avg_revenue)
+low_revenue
+
+ggplot(p2_d_summary, aes(avg_revenue, avg_score)) + 
+  geom_point(color = "gray40", size = 2) + 
+  geom_point(data = top_revenue, 
+             aes(avg_revenue, avg_score), 
+             color = "#984ea3", size = 2) +
+  geom_point(data = low_revenue, 
+             aes(avg_revenue, avg_score), 
+             color = "#4daf4a", size = 2) +
+  geom_text_repel(data = top_revenue, 
+                  aes(label = state), 
+                  color = "#984ea3", 
+                  box.padding = unit(.5, 'lines')) +
+  geom_text_repel(data = low_revenue, 
+                  aes(label = state), 
+                  color = "#4daf4a", 
+                  box.padding = unit(.5, 'lines')) + 
+  facet_wrap(~ content) +
+  theme_minimal(base_size = 15) + 
+  theme(panel.spacing = unit(1, "cm")) + 
+  scale_color_brewer(palette = "Dark2") + 
+  labs(x = "Average Total Revenue",
+       y = "Average Score",
+       title = "Relationship Between Revenue and Achievement by Subject", 
+       subtitle = "Five <span style = 'color : #984ea3'>highest</span> and 
+       <span style = 'color : #4daf4a'>lowest</span> revenue state highlighted",
+       caption = "Revenue normalized with respect to total enrollment") +
+    theme(panel.grid.major = element_blank(),
+          plot.title.position = "plot", 
+          plot.subtitle = element_markdown())
 ```
 
