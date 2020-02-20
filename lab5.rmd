@@ -10,7 +10,7 @@ output:
 ```{r setup}
 library(rio)
 library(tidyverse)
-library(ggplot2)
+#library(ggplot2) minor - but this is loaded when you load the tidyverse
 library(here)
 library(scales)
 library(janitor)
@@ -25,7 +25,8 @@ https://www.kaggle.com/noriuk/us-education-datasets-unification-project
 ```{r load_data}
 
 pth <- here("states_all.csv")
-d <- import(pth) %>% clean_names() %>% 
+d <- import(pth) %>% 
+  clean_names() %>% 
   mutate(state = str_to_title(state))
 
 ```
@@ -36,12 +37,17 @@ d <- import(pth) %>% clean_names() %>%
 
 ```{r p1_reproduce_plot, fig.width = 14, fig.height = 5}
 
-p1_d <- d %>% select(state, year, ends_with("revenue"), -total_revenue) %>% 
-  pivot_longer(ends_with("revenue"), names_to = "revenue_type", values_to = "revenue")
+p1_d <- d %>% 
+  select(state, year, ends_with("revenue"), -total_revenue) %>% 
+  pivot_longer(ends_with("revenue"), 
+               names_to = "revenue_type", 
+               values_to = "revenue")
 
 head(p1_d)
 
-ggplot(p1_d, aes(year, revenue)) +
+p1_d %>% 
+  mutate(revenue_type = str_replace(revenue_type, "_revenue", "")) %>% # remove _revenue
+  ggplot(aes(year, revenue)) +
   geom_line(aes(color = state)) + 
   facet_wrap(~revenue_type)
 
@@ -50,13 +56,17 @@ ggplot(p1_d, aes(year, revenue)) +
 
 I noticed when I first plot the data, an error was generated that told me it removed 534 rows that had missing values. I thought it would be good to remove those rows for subsequent visualization. 
 
+<!-- 👍 -->
+
 ### 2. Plot Improvement  
 
-The legend with all the states in different colors makes the plot extremely diffuclt to understand and the colors that correspond to each state is difficult to distinguish. Instead of having all the states by different colors, a stronger visualization could have all the sates in one color and selectively highlight particular states of interest as it comes to revenue (e.g., states with highest and lowest federal, local and state revenue, or highlist the state that one resides in) or the addition of a trend line to show the average change in revenue over time. 
+The legend with all the states in different colors makes the plot extremely diffuclt to understand and the colors that correspond to each state is difficult to distinguish. Instead of having all the states by different colors, a stronger visualization could have all the states in one color and selectively highlight particular states of interest as it comes to revenue (e.g., states with highest and lowest federal, local and state revenue, or highlist the state that one resides in) or the addition of a trend line to show the average change in revenue over time. 
 
 Overall, the data appears to skew to the right with most states reporting at the lower end of the revenue. Log transformation applied to the Y axis (revenue) may help better visualize the revenue across each state over time. 
 
 The current Y axis values are denoted in scientic notation which makes it difficult to understand. Converting the Y-axis to to dollars would be the more appropriate and fitting to the revenue data. The X axis title could be removed as year is intuitive and could be gleaned if a figure title was included. 
+
+<!-- Really great recommendations! -->
 
 ### 3. Revised Plot 
 
@@ -66,7 +76,8 @@ The current Y axis values are denoted in scientic notation which makes it diffic
 
 ```{r p1_revised_plot}
 
-p1_d_revised <- p1_d %>% drop_na() %>% 
+p1_d_revised <- p1_d %>% 
+  drop_na() %>% 
   mutate(revenue_type = as.factor(revenue_type)) %>%
   mutate(revenue_type = recode(revenue_type, 
                                "federal_revenue" = "Federal",
@@ -85,47 +96,62 @@ ggplot(p1_d_revised, aes(year, revenue)) +
        title = "Revenue Over Time by State") + 
   theme(plot.title.position = "plot")
 
+# Much better!
 ```
 
 ### Revised plot ideal version 
 
 I wanted to use gghighlight to highlight the state with the highest and lowest revenue for each facet (state, local, federal) but was having diffulty getting the result I wanted in ggplot. I included 2 attempts that produced varying result and highlights. 
 
-Also, I would have liked to still include the trend line even after using gghighlight. However simply adding geom_smooth() within my codes produced an error. 
+Also, I would have liked to still include the trend line even after using gghighlight. However simply adding `geom_smooth()` within my codes produced an error. 
 
 ```{r p1_revised_plot_ideal}
 
-p1_d_revised %>% group_by(revenue_type) %>% summarize(max = max(revenue), 
-                                              min = min(revenue))
+p1_d_revised %>% 
+  group_by(revenue_type) %>% 
+  summarize(max = max(revenue),
+            min = min(revenue))
 
 ggplot(p1_d_revised) +
   geom_line(aes(x = year, y = revenue, group = state)) +
   scale_y_log10(labels = scales::dollar) + 
   facet_wrap(~revenue_type) + 
   gghighlight(revenue == min(revenue) | revenue == max(revenue), 
-              calculate_per_facet = T, max_highlight = 1) + 
+              calculate_per_facet = TRUE, max_highlight = 1) + 
   theme_minimal()
+
+# huh... the above doesn't really work at all for me.
 
 ggplot(p1_d_revised) +
   geom_line(aes(x = year, y = revenue, color = state)) +
   scale_y_log10(labels = scales::dollar) + 
   facet_wrap(~revenue_type) + 
   gghighlight(max_highlight = 1, min(revenue) < 32000 | max(revenue) > 9990100, 
-              calculate_per_facet = T) +
+              calculate_per_facet = TRUE) +
   theme_minimal()
 
+# 🤷 I'm not exactly sure what's going on. Seems like gghighlight is just 
+# having a hard time here. Maybe just approach it manually.
 ```
 
 ## Part 2 
 
 Stephanie comment: I wanted to extract only the subject (math or reading) after pivot_longer so I googled up a regular expression to extract values in between underscores, but I have no idea what the expression is actually doing, it was more of a plug and play and see what works.
 
-```{r p2_data_manip}
+<!-- I modified your regular expression so hopefully it makes a bit more sense.  -->
+<!-- The `\\1` is saying give me the first parens. We only have one in this case -->
+<!-- but in your case you had multiple and you were asking for the second. -->
+<!-- The `.+` means any character multiple as many times as needed and  -->
+<!-- the \\d means a digit. -->
 
-p2_d <- d %>% select(state, year, total_revenue, enroll, ends_with("score")) %>% 
+```{r p2_data_manip}
+p2_d <- d %>% 
+  select(state, year, total_revenue, enroll, ends_with("score")) %>% 
   drop_na(-state, -year) %>%  
-  pivot_longer(ends_with("score"), names_to = "content", values_to = "score") %>% 
-  mutate(content = sub("(.*?_){1}(.*?)($|_.*)", "\\2", content)) %>% 
+  pivot_longer(cols = ends_with("score"), 
+               names_to = "content",
+               values_to = "score") %>% 
+  mutate(content = gsub("avg_(.+)_\\d.+", "\\1", content)) %>% 
   mutate(content = as.factor(content)) %>%
   mutate(content = recode(content, 
                                "math" = "Math",
@@ -195,5 +221,8 @@ ggplot(p2_d_summary, aes(avg_revenue, avg_score)) +
     theme(panel.grid.major = element_blank(),
           plot.title.position = "plot", 
           plot.subtitle = element_markdown())
+
+# I love this so much! Great job using the text annotations and ggtext!
+# Seriously really nice.
 ```
 
